@@ -5,12 +5,11 @@ package server;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
-import java.io.InputStreamReader;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
-
-import javax.swing.plaf.synth.SynthToggleButtonUI;
 
 /**
  * Example program from Chapter 1 Programming Spiders, Bots and Aggregators in
@@ -42,57 +41,176 @@ public class WebServer {
 
     System.out.println("Waiting for connection");
     for (;;) {
-      try {
         // wait for a connection
-        Socket remote = s.accept();
-        // remote is now the connected socket
-        System.out.println("Connection, sending data.");
-        BufferedReader in = new BufferedReader(new InputStreamReader(
-            remote.getInputStream()));
-        PrintWriter out = new PrintWriter(remote.getOutputStream());
+        Socket remote;
+		try {
+			remote = s.accept();        
+			//reading informations
+	        HttpInterpreter hi = new HttpInterpreter(remote);
+	        System.out.println(hi.toString());
+	        switch (hi.getRequestType()) {
+			case "GET":
+			case "POST":
+				fetchFile(remote, hi);
+				break;
+			case "PUT":
+				putFile(remote, hi);
+				break;
+			case "HEAD":
+				sendHead(remote, hi);
+				break;
+			case "DELETE":
+				deleteFile(remote, hi);
+				break;
+			default:
+				break;
+			}
+	        
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+    }
+  }
+  
+  private void deleteFile(Socket socket, HttpInterpreter hi)
+  {
+		try {
+			PrintWriter out = new PrintWriter(socket.getOutputStream());
+			File f = new File("."+hi.getFile());
+			
+			if(f.exists())
+			{
+				out.write(HttpInterpreter.getHeader204());
+				System.out.println("DELETE: 204");
+				f.delete();
+			}
+			else
+			{
+				out.write(HttpInterpreter.getHeader404());
+				System.out.println("DELETE: 404");
+			}
+			out.flush();
+			out.close();
+			socket.close();
+		} catch (Exception e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+	
+  }
 
-        // read the data sent. We basically ignore it,
-        // stop reading once a blank line is hit. This
-        // blank line signals the end of the client HTTP
-        // headers.
-        HttpInterpreter hi = new HttpInterpreter(remote);
-        System.out.println(hi.getRequeteType());
-        System.out.println(hi.getHttpVersion());
-        System.out.println(hi.getFile());
-        System.out.println(hi.getPostParamter("f"));
+private void sendHead(Socket socket, HttpInterpreter hi)
+  {
+	  try
+	  {
+		PrintWriter out = new PrintWriter(socket.getOutputStream());
         String str = "."+hi.getFile();
-        // Send the response
-        // Send the headers
-        out.println("HTTP/1.0 200 OK");
-        out.println("Content-Type: text/html");
-        out.println("Server: Bot");
-        // this blank line signals the end of the headers
-        out.println("");
-        // Send the HTML page
         File f = new File(str);
-        BufferedReader fileBufferedReader = new BufferedReader(new FileReader(f));
-        String buf = fileBufferedReader.readLine();
-        while(buf!=null)
-        {
-        	out.println(buf);
-        	buf=fileBufferedReader.readLine();
+        System.out.println(str);
+        if(!f.exists())
+        { 
+        	// Send the response
+	        // Send the headers
+        	out.print(HttpInterpreter.getHeader404());
+        	System.out.println("HEAD: 404");
         }
-        fileBufferedReader.close();
-        System.out.println("Envoi des données");
-        out.flush();
-        out.close();
-        remote.close();
+        else
+        {
+        	// Send the response
+	        // Send the headers
+	        out.print(HttpInterpreter.getHeader200(hi.getFile().split("\\.")[1].equals("html")));
+	        System.out.println("HEAD: 200");
+	        // Send the HTML page
+        }
+        
+        //Envoi des données
+    	out.flush();
+    	out.close();
+    	socket.close();
       } catch (Exception e) {
         e.printStackTrace();
       }
-    }
+	
+  }
+
+  protected void putFile(Socket socket, HttpInterpreter hi)
+  {
+		try {
+			PrintWriter out = new PrintWriter(socket.getOutputStream());
+			File f = new File("."+hi.getFile());
+			
+			if(f.exists())
+			{
+				out.write(HttpInterpreter.getHeader201(hi.getFile()));
+				System.out.println("PUT: 201");
+			}
+			else
+			{
+				out.write(HttpInterpreter.getHeader204());
+				System.out.println("PUT: 204");
+			}
+			
+			FileWriter fw = new FileWriter(f);
+			fw.write(hi.getBody());
+			fw.flush();
+			fw.close();
+			out.flush();
+			out.close();
+			socket.close();
+		} catch (Exception e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		
+  }
+
+  protected void fetchFile(Socket socket, HttpInterpreter hi)
+  {
+	  try
+	  {
+		PrintWriter out = new PrintWriter(socket.getOutputStream());
+        String str = "."+hi.getFile();
+        File f = new File(str);
+        if(!f.exists())
+        { 
+        	// Send the response
+	        // Send the headers
+        	out.print(HttpInterpreter.getHeader404());
+        	System.out.println("GET/POST: 404");
+        }
+        else
+        {
+        	// Send the response
+	        // Send the headers
+	        out.print(HttpInterpreter.getHeader200(hi.getFile().split("\\.")[1].equals("html")));
+	        System.out.println("GET/POST: 200");
+	        // Send the HTML page
+	        
+	        BufferedReader fileBufferedReader = new BufferedReader(new FileReader(f));
+	        String buf = fileBufferedReader.readLine();
+	        while(buf!=null)
+	        {
+	        	out.println(buf);
+	        	buf=fileBufferedReader.readLine();
+	        }
+	        fileBufferedReader.close();
+        }
+        
+        //Envoi des données
+    	out.flush();
+    	out.close();
+    	socket.close();
+      } catch (Exception e) {
+        e.printStackTrace();
+      }
   }
 
   /**
    * Start the application.
    * 
    * @param args
-   *            Command line parameters are not used.
+   * Command line parameters are not used.
    */
   public static void main(String args[]) {
     WebServer ws = new WebServer();
