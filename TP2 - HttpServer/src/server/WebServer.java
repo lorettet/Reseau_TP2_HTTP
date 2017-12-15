@@ -2,8 +2,12 @@
 
 package server;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
@@ -23,6 +27,11 @@ import java.net.Socket;
  */
 public class WebServer {
 
+	/**
+	 * La page affiché par défault par le serveur
+	 */
+	private final static String DEFAULT_PAGE = "test.html";
+	
   /**
    * WebServer constructor.
    */
@@ -50,8 +59,10 @@ public class WebServer {
 	        System.out.println(hi.toString());
 	        switch (hi.getRequestType()) {
 			case "GET":
+				fetchGETFile(remote, hi);
+				break;
 			case "POST":
-				fetchFile(remote, hi);
+				fetchPOSTFile(remote, hi);
 				break;
 			case "PUT":
 				putFile(remote, hi);
@@ -73,6 +84,11 @@ public class WebServer {
     }
   }
   
+  /**
+   * DELETE : Supprime un fichier du serveur
+   * @param socket le socket de connexion
+   * @param hi la classe HttpInterpreter qui a décortiqué la requête
+   */
   private void deleteFile(Socket socket, HttpInterpreter hi)
   {
 		try {
@@ -99,8 +115,13 @@ public class WebServer {
 		}
 	
   }
-
-private void sendHead(Socket socket, HttpInterpreter hi)
+  
+  /**
+   * HEAD : revoie uniquement le HEADER de réponse
+   * @param socket le socket de connexion
+   * @param hi la classe HttpInterpreter qui a décortiqué la requête
+   */
+  private void sendHead(Socket socket, HttpInterpreter hi)
   {
 	  try
 	  {
@@ -119,7 +140,15 @@ private void sendHead(Socket socket, HttpInterpreter hi)
         {
         	// Send the response
 	        // Send the headers
-	        out.print(HttpInterpreter.getHeader200(hi.getFile().split("\\.")[1].equals("html")));
+        	String extension = hi.getFile().split("\\.")[1];
+        	String contentType="";
+        	if(extension.equals("html"))
+        		contentType = "text/html";
+        	else if(extension.equals("jpg"))
+        		contentType="image/jpeg";
+        	else if(extension.equals("mp3"))
+        		contentType="audio/mpeg";
+	        out.print(HttpInterpreter.getHeader200(contentType));
 	        System.out.println("HEAD: 200");
 	        // Send the HTML page
         }
@@ -134,27 +163,32 @@ private void sendHead(Socket socket, HttpInterpreter hi)
 	
   }
 
+  /**
+   * PUT : ajoute un fichier sur le serveur
+   * @param socket le socket de connexion
+   * @param hi la classe HttpInterpreter qui a décortiqué la requête
+   */
   protected void putFile(Socket socket, HttpInterpreter hi)
   {
 		try {
-			PrintWriter out = new PrintWriter(socket.getOutputStream());
+			BufferedOutputStream out = new BufferedOutputStream(socket.getOutputStream());
 			File f = new File("."+hi.getFile());
 			
 			if(f.exists())
 			{
-				out.write(HttpInterpreter.getHeader201(hi.getFile()));
+				out.write(HttpInterpreter.getHeader201(hi.getFile()).getBytes());
 				System.out.println("PUT: 201");
 			}
 			else
 			{
-				out.write(HttpInterpreter.getHeader204());
+				out.write(HttpInterpreter.getHeader204().getBytes());
 				System.out.println("PUT: 204");
 			}
 			
-			FileWriter fw = new FileWriter(f);
-			fw.write(hi.getBody());
-			fw.flush();
-			fw.close();
+			BufferedOutputStream outFile = new BufferedOutputStream(new FileOutputStream(f));
+			outFile.write(hi.getBody().getBytes());
+			outFile.flush();
+			outFile.close();
 			out.flush();
 			out.close();
 			socket.close();
@@ -165,34 +199,52 @@ private void sendHead(Socket socket, HttpInterpreter hi)
 		
   }
 
-  protected void fetchFile(Socket socket, HttpInterpreter hi)
+  /**
+   * GET : Renvoie le fichier demandé s'il existe
+   * @param socket le socket de connexion
+   * @param hi la classe HttpInterpreter qui a décortiqué la requête
+   */
+  protected void fetchGETFile(Socket socket, HttpInterpreter hi)
   {
 	  try
 	  {
-		PrintWriter out = new PrintWriter(socket.getOutputStream());
-        String str = "."+hi.getFile();
+		BufferedOutputStream out = new BufferedOutputStream(socket.getOutputStream());
+		String str;
+		if(hi.getFile().equals("/"))
+			str = DEFAULT_PAGE;
+		else
+			str = "."+hi.getFile();
         File f = new File(str);
         if(!f.exists())
         { 
         	// Send the response
 	        // Send the headers
-        	out.print(HttpInterpreter.getHeader404());
+        	out.write(HttpInterpreter.getHeader404().getBytes());
         	System.out.println("GET/POST: 404");
         }
         else
         {
         	// Send the response
 	        // Send the headers
-	        out.print(HttpInterpreter.getHeader200(hi.getFile().split("\\.")[1].equals("html")));
+        	String extension = str.split("\\.")[2];
+        	System.out.println(extension);
+        	String contentType = "";
+        	if(extension.equals("html"))
+        		contentType = "text/html";
+        	else if(extension.equals("jpg"))
+        		contentType="image/jpeg";
+        	else if(extension.equals("mp3"))
+        		contentType="audio/mpeg";
+        	System.out.println(contentType);
+	        out.write(HttpInterpreter.getHeader200(contentType).getBytes());
 	        System.out.println("GET/POST: 200");
 	        // Send the HTML page
 	        
-	        BufferedReader fileBufferedReader = new BufferedReader(new FileReader(f));
-	        String buf = fileBufferedReader.readLine();
-	        while(buf!=null)
+	        BufferedInputStream fileBufferedReader = new BufferedInputStream(new FileInputStream(f));
+	        int buf;
+	        while((buf = fileBufferedReader.read())!=-1)
 	        {
-	        	out.println(buf);
-	        	buf=fileBufferedReader.readLine();
+	        	out.write((char)buf);
 	        }
 	        fileBufferedReader.close();
         }
@@ -206,6 +258,65 @@ private void sendHead(Socket socket, HttpInterpreter hi)
       }
   }
 
+  /**
+   * POST : Renvoie le fichier demandé s'il existe suivi du body de la requête (Incompréhension de la consigne)
+   * @param socket le socket de connexion
+   * @param hi la classe HttpInterpreter qui a décortiqué la requête
+   */
+  protected void fetchPOSTFile(Socket socket, HttpInterpreter hi)
+  {
+	  try
+	  {
+		BufferedOutputStream out = new BufferedOutputStream(socket.getOutputStream());
+		String str;
+		if(hi.getFile().equals("/"))
+			str = DEFAULT_PAGE;
+		else
+			str = "."+hi.getFile();
+        File f = new File(str);
+        if(!f.exists())
+        { 
+        	// Send the response
+	        // Send the headers
+        	out.write(HttpInterpreter.getHeader404().getBytes());
+        	System.out.println("GET/POST: 404");
+        }
+        else
+        {
+        	// Send the response
+	        // Send the headers
+        	String extension = str.split("\\.")[2];
+        	String contentType = "";
+        	if(extension.equals("html"))
+        		contentType = "text/html";
+        	else if(extension.equals("jpg"))
+        		contentType="image/jpeg";
+        	else if(extension.equals("mp3"))
+        		contentType="audio/mpeg";
+	        out.write(HttpInterpreter.getHeader200(contentType).getBytes());
+	        System.out.println("GET/POST: 200");
+	        // Send the HTML page
+	        
+	        BufferedInputStream fileBufferedReader = new BufferedInputStream(new FileInputStream(f));
+	        int buf;
+	        while((buf = fileBufferedReader.read())!=-1)
+	        {
+	        	out.write(buf);
+	        }
+			out.write(hi.getBody().getBytes());
+	        fileBufferedReader.close();
+        }
+        
+        //Envoi des données
+    	out.flush();
+    	out.close();
+    	socket.close();
+      } catch (Exception e) {
+        e.printStackTrace();
+      }
+  }
+
+  
   /**
    * Start the application.
    * 

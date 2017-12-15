@@ -1,5 +1,13 @@
 package client;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.net.InetAddress;
 import java.net.Socket;
@@ -22,17 +30,23 @@ public class WebPing {
       Socket sock = new Socket(httpServerHost, httpServerPort);
       addr = sock.getInetAddress();
       System.out.println("Connected to " + addr);
-      PrintWriter pw = new PrintWriter(sock.getOutputStream());
-      pw.println("DELETE /new.html HTTP/1.0");
-      pw.println("Content-length: 16");
-      pw.println("");
-      pw.println("<p>New File</p>");
-      pw.flush();
-      pw.close();
+      File f = new File("./lapin.jpg");
+      BufferedOutputStream out = new BufferedOutputStream(sock.getOutputStream());
+      BufferedInputStream in = new BufferedInputStream(new FileInputStream(f));
+      out.write("PUT /new.txt HTTP/1.0\r\n".getBytes());
+      out.write(("Content-length: "+f.length()+"\r\n").getBytes());
+      out.write("\r\n".getBytes());
+      int buf;
+      while((buf = in.read())!=-1)
+      {
+    	  out.write((char)buf);
+      }
+      in.close();
+      out.flush();
+      out.close();
       sock.close();
     } catch (java.io.IOException e) {
-      System.out.println("Can't connect to " + httpServerHost + ":" + httpServerPort);
-      System.out.println(e);
+      e.printStackTrace();
     }
   }
 }
